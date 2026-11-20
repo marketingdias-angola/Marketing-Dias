@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle2, Edit3, MessageCircle, Pause, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, Edit3, MapPin, MessageCircle, Pause, Plus, Store, Trash2 } from 'lucide-react';
 import {
   buildAdminWhatsAppUrl,
   formatKwanza,
@@ -7,11 +7,13 @@ import {
 } from '../constants/marketplace';
 import { deleteListing, updateListingStatus } from '../services/listings';
 import type { Listing } from '../types/listing';
+import type { VendorAccount } from '../types/vendor';
 
 interface MyListingsSectionProps {
   listings: Listing[];
   isSignedIn: boolean;
-  onOpenSellerLogin: () => void;
+  vendorProfile: VendorAccount | null;
+  onOpenSellerLogin: (tab?: 'entrar' | 'registar') => void;
   onOpenPublish: () => void;
   onEditListing: (listing: Listing) => void;
   onNotify: (msg: string) => void;
@@ -20,6 +22,7 @@ interface MyListingsSectionProps {
 export function MyListingsSection({
   listings,
   isSignedIn,
+  vendorProfile,
   onOpenSellerLogin,
   onOpenPublish,
   onEditListing,
@@ -33,18 +36,27 @@ export function MyListingsSection({
       <section className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-center">
         <div className="bg-white border border-slate-200 rounded-2xl p-10">
           <h2 className="font-display text-2xl font-bold text-[#0A1A33] mb-2">
-            Os Meus Anúncios
+            Painel do Vendedor — Os Meus Anúncios
           </h2>
           <p className="text-sm text-slate-600 mb-6">
-            Inicie sessão com o email e senha fornecidos pelo Administrador para gerir os seus anúncios no Marketing Dias.
+            Entre com a sua conta ou crie uma conta grátis em segundos para publicar, editar e gerir os seus próprios anúncios nas 21 províncias de Angola.
           </p>
-          <button
-            type="button"
-            onClick={onOpenSellerLogin}
-            className="px-6 py-3 rounded-xl bg-[#0A1A33] hover:bg-[#12284F] text-[#FF7A00] text-sm font-bold transition-colors cursor-pointer"
-          >
-            Entrar como Vendedor
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => onOpenSellerLogin('entrar')}
+              className="px-6 py-3 rounded-xl bg-[#0A1A33] hover:bg-[#12284F] text-[#FF7A00] text-sm font-bold transition-colors cursor-pointer"
+            >
+              Entrar na Minha Conta
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenSellerLogin('registar')}
+              className="px-6 py-3 rounded-xl bg-[#FF7A00] hover:bg-[#E56800] text-[#0A1A33] text-sm font-bold transition-colors cursor-pointer"
+            >
+              Criar Conta Grátis
+            </button>
+          </div>
         </div>
       </section>
     );
@@ -80,11 +92,27 @@ export function MyListingsSection({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
           <h2 className="font-display text-2xl font-bold text-[#0A1A33]">
-            Os Meus Anúncios
+            Painel do Vendedor — Os Meus Anúncios
           </h2>
-          <p className="text-sm text-slate-600 mt-1">
-            Acompanhe o estado dos seus anúncios enviados para a central Marketing Dias.
-          </p>
+          {vendorProfile ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm text-slate-600 mt-1.5">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-[#0A1A33]">
+                <Store className="w-4 h-4 text-[#FF7A00]" />
+                {vendorProfile.loja}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>{vendorProfile.nome}</span>
+              <span aria-hidden="true">·</span>
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                {vendorProfile.provincia}
+              </span>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-600 mt-1">
+              Gerencie os seus próprios anúncios enviados para a central Marketing Dias.
+            </p>
+          )}
         </div>
         <button
           type="button"

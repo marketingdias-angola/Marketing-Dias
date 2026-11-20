@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -18,6 +18,7 @@ import {
   LogOut,
   MapPin,
   MessageCircle,
+  Package,
   Plus,
   Search,
   Shield,
@@ -41,7 +42,7 @@ import { ListingCard } from './components/ListingCard';
 import { ListingDetailModal } from './components/ListingDetailModal';
 import { MarketingDiasLogo } from './components/MarketingDiasLogo';
 import { MyListingsSection } from './components/MyListingsSection';
-import { PublishModal } from './components/PublishModal';
+import { PublishModal, type VendorAuthTab } from './components/PublishModal';
 import {
   ADMIN_EMAIL,
   ADMIN_WHATSAPP_LOCAL,
@@ -59,8 +60,14 @@ import {
   subscribeMyListings,
 } from './services/listings';
 import { getSellerProfile, subscribeSellersAdmin } from './services/sellers';
+import {
+  getVendorProfile,
+  registerVendorAccount,
+  subscribeVendorsAdmin,
+} from './services/vendors';
 import type { Listing, ListingCategory } from './types/listing';
 import type { SellerAccount } from './types/seller';
+import type { VendorAccount, VendorRegisterInput } from './types/vendor';
 
 type ActiveTab = 'explorar' | 'provincias' | 'meus-anuncios' | 'admin-login' | 'admin';
 
@@ -116,6 +123,7 @@ function writeCachedListings(items: Listing[]) {
 function MarketplaceContent() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [vendorProfile, setVendorProfile] = useState<VendorAccount | null>(null);
   const [currentSellerProfile, setCurrentSellerProfile] = useState<SellerAccount | null>(null);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('explorar');
@@ -123,6 +131,7 @@ function MarketplaceContent() {
   const [myListings, setMyListings] = useState<Listing[]>([]);
   const [adminListings, setAdminListings] = useState<Listing[]>([]);
   const [sellers, setSellers] = useState<SellerAccount[]>([]);
+  const [vendors, setVendors] = useState<VendorAccount[]>([]);
 
   const [loadingPublic, setLoadingPublic] = useState(() => readCachedListings().length === 0);
   const [firestoreError, setFirestoreError] = useState('');
@@ -134,16 +143,22 @@ function MarketplaceContent() {
 
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [publishAuthTab, setPublishAuthTab] = useState<VendorAuthTab>('entrar');
   const [editingListing, setEditingListing] = useState<Listing | null>(null);
   const [toastMessage, setToastMessage] = useState('');
   const [heroImageError, setHeroImageError] = useState(false);
   const [installBannerDismissed, setInstallBannerDismissed] = useState(false);
 
+  const registeringVendorRef = useRef(false);
+
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const isOnline = useOnlineStatus();
 
   const userIsAdmin = isAdminEmail(user?.email, user?.emailVerified);
-  const isAuthorizedSeller = Boolean(currentSellerProfile && !currentSellerProfile.blocked);
+  const isAuthorizedSeller = Boolean(
+    (vendorProfile && !vendorProfile.blocked) ||
+      (currentSellerProfile && !currentSellerProfile.blocked),
+  );
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -151,31 +166,55 @@ function MarketplaceContent() {
       setAuthReady(true);
 
       if (!currentUser) {
+        setVendorProfile(null);
         setCurrentSellerProfile(null);
         return;
       }
 
       if (isAdminEmail(currentUser.email, currentUser.emailVerified)) {
+        setVendorProfile(null);
         setCurrentSellerProfile(null);
         setAdminLoginError('');
         return;
       }
 
+      if (registeringVendorRef.current) {
+        return;
+      }
+
       try {
-        const profile = await getSellerProfile(currentUser.uid);
-        if (!profile) {
-          await signOut(auth);
+        const vProfile = await getVendorProfile(currentUser.uid);
+        if (vProfile) {
+          if (vProfile.blocked) {
+            await signOut(auth);
+            setVendorProfile(null);
+            setCurrentSellerProfile(null);
+            setToastMessage('A sua conta de vendedor foi bloqueada pelo Administrador.');
+            return;
+          }
+          setVendorProfile(vProfile);
           setCurrentSellerProfile(null);
           return;
         }
-        if (profile.blocked) {
-          await signOut(auth);
-          setCurrentSellerProfile(null);
-          setToastMessage('A sua conta de vendedor foi bloqueada pelo Administrador.');
+
+        const sProfile = await getSellerProfile(currentUser.uid);
+        if (sProfile) {
+          if (sProfile.blocked) {
+            await signOut(auth);
+            setVendorProfile(null);
+            setCurrentSellerProfile(null);
+            setToastMessage('A sua conta de vendedor foi bloqueada pelo Administrador.');
+            return;
+          }
+          setCurrentSellerProfile(sProfile);
+          setVendorProfile(null);
           return;
         }
-        setCurrentSellerProfile(profile);
+
+        setVendorProfile(null);
+        setCurrentSellerProfile(null);
       } catch {
+        setVendorProfile(null);
         setCurrentSellerProfile(null);
       }
     });
@@ -221,6 +260,7 @@ function MarketplaceContent() {
     if (!authReady || !userIsAdmin) {
       setAdminListings([]);
       setSellers([]);
+      setVendors([]);
       return;
     }
     const unsubListings = subscribeAllListingsAdmin(
@@ -231,9 +271,14 @@ function MarketplaceContent() {
       (items) => setSellers(items),
       (err) => setFirestoreError(err.message),
     );
+    const unsubVendors = subscribeVendorsAdmin(
+      (items) => setVendors(items),
+      (err) => setFirestoreError(err.message),
+    );
     return () => {
       unsubListings();
       unsubSellers();
+      unsubVendors();
     };
   }, [authReady, userIsAdmin]);
 
@@ -305,27 +350,50 @@ function MarketplaceContent() {
   async function handleSellerSignIn(email: string, password: string) {
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail || !password) {
-      throw new Error('Preencha o email e a senha fornecidos pelo Administrador.');
+      throw new Error('Preencha o seu email e a sua senha.');
     }
 
     try {
       const cred = await signInWithEmailAndPassword(auth, normalizedEmail, password);
       if (isAdminEmail(cred.user.email, cred.user.emailVerified)) {
+        setPublishOpen(false);
+        setActiveTab('admin');
         setToastMessage('Sessão iniciada como Administrador.');
         return;
       }
 
-      const profile = await getSellerProfile(cred.user.uid);
-      if (!profile) {
-        await signOut(auth);
-        throw new Error('Conta de vendedor não autorizada. Solicite acesso ao Administrador.');
+      const vProfile = await getVendorProfile(cred.user.uid);
+      if (vProfile) {
+        if (vProfile.blocked) {
+          await signOut(auth);
+          throw new Error('A sua conta de vendedor foi bloqueada pelo Administrador.');
+        }
+        setVendorProfile(vProfile);
+        setCurrentSellerProfile(null);
+        setPublishOpen(false);
+        setActiveTab('meus-anuncios');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setToastMessage('Sessão de vendedor iniciada.');
+        return;
       }
-      if (profile.blocked) {
-        await signOut(auth);
-        throw new Error('A sua conta de vendedor foi bloqueada pelo Administrador.');
+
+      const sProfile = await getSellerProfile(cred.user.uid);
+      if (sProfile) {
+        if (sProfile.blocked) {
+          await signOut(auth);
+          throw new Error('A sua conta de vendedor foi bloqueada pelo Administrador.');
+        }
+        setCurrentSellerProfile(sProfile);
+        setVendorProfile(null);
+        setPublishOpen(false);
+        setActiveTab('meus-anuncios');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setToastMessage('Sessão de vendedor iniciada.');
+        return;
       }
-      setCurrentSellerProfile(profile);
-      setToastMessage('Sessão de vendedor iniciada.');
+
+      await signOut(auth);
+      throw new Error('Perfil de vendedor não encontrado. Crie uma conta grátis na aba CRIAR CONTA GRÁTIS.');
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code ?? '';
       if (
@@ -341,15 +409,31 @@ function MarketplaceContent() {
       if (code === 'auth/operation-not-allowed') {
         throw new Error('O método Email/Senha precisa estar ativo no Firebase Console.');
       }
-      throw err instanceof Error ? err : new Error('Não foi possível iniciar sessão de vendedor.');
+      throw err instanceof Error ? err : new Error('Não foi possível iniciar sessão.');
+    }
+  }
+
+  async function handleVendorRegister(input: VendorRegisterInput) {
+    registeringVendorRef.current = true;
+    try {
+      const created = await registerVendorAccount(input);
+      setVendorProfile(created);
+      setCurrentSellerProfile(null);
+      setPublishOpen(false);
+      setActiveTab('meus-anuncios');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setToastMessage('Conta criada com sucesso! Bem-vindo ao seu painel de vendedor.');
+    } finally {
+      registeringVendorRef.current = false;
     }
   }
 
   async function handleSignOut() {
     try {
       await signOut(auth);
+      setVendorProfile(null);
       setCurrentSellerProfile(null);
-      if (activeTab === 'admin' || activeTab === 'admin-login') {
+      if (activeTab === 'admin' || activeTab === 'admin-login' || activeTab === 'meus-anuncios') {
         setActiveTab('explorar');
       }
       setToastMessage('Sessão terminada.');
@@ -360,6 +444,13 @@ function MarketplaceContent() {
 
   function handleOpenNewPublish() {
     setEditingListing(null);
+    setPublishAuthTab('entrar');
+    setPublishOpen(true);
+  }
+
+  function handleOpenSellerAuth(tab: VendorAuthTab = 'entrar') {
+    setEditingListing(null);
+    setPublishAuthTab(tab);
     setPublishOpen(true);
   }
 
@@ -512,6 +603,25 @@ function MarketplaceContent() {
               <Plus className="w-4 h-4" />
               <span>Anunciar Produto</span>
             </button>
+
+            {isAuthorizedSeller && !userIsAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('meus-anuncios');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                title="Meus Anúncios"
+                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  activeTab === 'meus-anuncios'
+                    ? 'border-[#FF7A00] text-[#FF7A00] bg-[#12284F]'
+                    : 'border-slate-600/70 text-slate-200 hover:border-[#FF7A00] hover:text-white'
+                }`}
+              >
+                <Package className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Meus Anúncios</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -899,7 +1009,8 @@ function MarketplaceContent() {
           <MyListingsSection
             listings={myListings}
             isSignedIn={Boolean(user && (userIsAdmin || isAuthorizedSeller))}
-            onOpenSellerLogin={handleOpenNewPublish}
+            vendorProfile={vendorProfile}
+            onOpenSellerLogin={(tab) => handleOpenSellerAuth(tab ?? 'entrar')}
             onOpenPublish={handleOpenNewPublish}
             onEditListing={handleEditListing}
             onNotify={setToastMessage}
@@ -919,6 +1030,7 @@ function MarketplaceContent() {
             adminUser={user}
             listings={adminListings}
             sellers={sellers}
+            vendors={vendors}
             onEditListing={handleEditListing}
             onNotify={setToastMessage}
           />
@@ -1013,6 +1125,7 @@ function MarketplaceContent() {
 
       <PublishModal
         isOpen={publishOpen}
+        initialAuthTab={publishAuthTab}
         user={user}
         isAdmin={userIsAdmin}
         isAuthorizedSeller={isAuthorizedSeller}
@@ -1022,6 +1135,7 @@ function MarketplaceContent() {
           setEditingListing(null);
         }}
         onSellerSignIn={handleSellerSignIn}
+        onVendorRegister={handleVendorRegister}
         onOpenAdminLogin={() => {
           setActiveTab('admin-login');
           window.scrollTo({ top: 0, behavior: 'smooth' });

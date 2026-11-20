@@ -23,8 +23,13 @@ import {
   deleteSellerDoc,
   toggleSellerBlocked,
 } from '../services/sellers';
+import {
+  deleteVendorDoc,
+  toggleVendorBlocked,
+} from '../services/vendors';
 import type { Listing, ListingStatus } from '../types/listing';
 import { SELLER_LIMITS, type SellerAccount } from '../types/seller';
+import type { VendorAccount } from '../types/vendor';
 
 type AdminTab = 'criar-vendedor' | 'ver-vendedores' | 'aprovar-anuncios';
 
@@ -32,6 +37,7 @@ interface AdminDashboardProps {
   adminUser: User;
   listings: Listing[];
   sellers: SellerAccount[];
+  vendors: VendorAccount[];
   onEditListing: (listing: Listing) => void;
   onNotify: (msg: string) => void;
 }
@@ -40,6 +46,7 @@ export function AdminDashboard({
   adminUser,
   listings,
   sellers,
+  vendors,
   onEditListing,
   onNotify,
 }: AdminDashboardProps) {
@@ -147,6 +154,35 @@ export function AdminDashboard({
     }
   }
 
+  async function handleToggleBlockVendor(vendor: VendorAccount) {
+    setBusySellerId(vendor.id);
+    try {
+      await toggleVendorBlocked(vendor.id, !vendor.blocked);
+      onNotify(
+        !vendor.blocked
+          ? `Vendedor "${vendor.loja || vendor.nome}" bloqueado.`
+          : `Vendedor "${vendor.loja || vendor.nome}" desbloqueado.`,
+      );
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Erro ao atualizar vendedor.');
+    } finally {
+      setBusySellerId(null);
+    }
+  }
+
+  async function handleDeleteVendor(vendorId: string) {
+    setBusySellerId(vendorId);
+    try {
+      await deleteVendorDoc(vendorId);
+      setConfirmDeleteSellerId(null);
+      onNotify('Vendedor removido.');
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Erro ao apagar vendedor.');
+    } finally {
+      setBusySellerId(null);
+    }
+  }
+
   async function handleStatusChange(listingId: string, nextStatus: ListingStatus) {
     setBusyId(listingId);
     try {
@@ -209,7 +245,7 @@ export function AdminDashboard({
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Ver Todos os Vendedores ({sellers.length})</span>
+            <span>Ver Todos os Vendedores ({vendors.length + sellers.length})</span>
           </button>
 
           <button
@@ -234,7 +270,7 @@ export function AdminDashboard({
             Criar Conta para Vendedor
           </h3>
           <p className="text-xs text-slate-600 mb-6 leading-relaxed">
-            Vendedores não podem criar contas sozinhos. Crie aqui o acesso e entregue o email e a senha temporária ao vendedor para ele publicar anúncios (sem telefone).
+            Os vendedores já podem criar a própria conta gratuitamente no site. Se preferir, crie manualmente aqui uma conta para um vendedor parceiro.
           </p>
 
           {sellerFormError && (
@@ -320,27 +356,104 @@ export function AdminDashboard({
 
       {/* TAB B: Ver Todos os Vendedores */}
       {activeAdminTab === 'ver-vendedores' && (
-        <div className="mt-8">
-          {sellers.length === 0 ? (
+        <div className="mt-8 space-y-6">
+          {vendors.length === 0 && sellers.length === 0 ? (
             <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
               <p className="text-sm font-medium text-slate-600 mb-4">
-                Ainda não criou nenhuma conta de vendedor.
+                Ainda não existem contas de vendedores registadas.
               </p>
               <button
                 type="button"
                 onClick={() => setActiveAdminTab('criar-vendedor')}
                 className="px-5 py-2.5 rounded-xl bg-[#FF7A00] hover:bg-[#E56800] text-[#0A1A33] text-xs font-bold cursor-pointer"
               >
-                Criar Primeiro Vendedor
+                Criar Vendedor Manualmente
               </button>
             </div>
           ) : (
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-200">
+              {vendors.map((vendor) => {
+                const isBusy = busySellerId === vendor.id;
+                return (
+                  <div
+                    key={`vendor-${vendor.id}`}
+                    className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/60"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span
+                          className={`font-bold ${
+                            vendor.blocked ? 'text-red-700' : 'text-emerald-700'
+                          }`}
+                        >
+                          {vendor.blocked ? 'Bloqueado' : 'Ativo'}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{vendor.provincia}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="truncate">{vendor.email}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>Tel: {vendor.telefone}</span>
+                      </div>
+                      <h3 className="font-display text-base font-bold text-slate-900 mt-0.5 truncate">
+                        {vendor.loja} <span className="text-xs font-medium text-slate-500">({vendor.nome})</span>
+                      </h3>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => void handleToggleBlockVendor(vendor)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                          vendor.blocked
+                            ? 'bg-[#FF7A00] hover:bg-[#E56800] text-[#0A1A33]'
+                            : 'border border-slate-300 hover:bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        <Ban className="w-3.5 h-3.5" />
+                        <span>{vendor.blocked ? 'Desbloquear' : 'Bloquear'}</span>
+                      </button>
+
+                      {confirmDeleteSellerId === vendor.id ? (
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => void handleDeleteVendor(vendor.id)}
+                            className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
+                          >
+                            Confirmar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteSellerId(null)}
+                            className="px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-xs font-semibold cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => setConfirmDeleteSellerId(vendor.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 text-red-700 hover:bg-red-50 text-xs font-semibold cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Apagar</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
               {sellers.map((seller) => {
                 const isBusy = busySellerId === seller.id;
                 return (
                   <div
-                    key={seller.id}
+                    key={`seller-${seller.id}`}
                     className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/60"
                   >
                     <div className="min-w-0">

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import type { User } from 'firebase/auth';
-import { ImagePlus, KeyRound, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ImagePlus, KeyRound, Mail, MapPin, Phone, Store, Trash2, User as UserIcon, X } from 'lucide-react';
 import {
   ANGOLA_PROVINCES,
   compressImageFile,
@@ -14,15 +14,20 @@ import {
   type ListingCategory,
   type ListingFormValues,
 } from '../types/listing';
+import { VENDOR_LIMITS, type VendorRegisterInput } from '../types/vendor';
+
+export type VendorAuthTab = 'entrar' | 'registar';
 
 interface PublishModalProps {
   isOpen: boolean;
+  initialAuthTab?: VendorAuthTab;
   user: User | null;
   isAdmin: boolean;
   isAuthorizedSeller: boolean;
   editingListing: Listing | null;
   onClose: () => void;
   onSellerSignIn: (email: string, password: string) => Promise<void>;
+  onVendorRegister: (input: VendorRegisterInput) => Promise<void>;
   onOpenAdminLogin: () => void;
   onSuccess: (message: string) => void;
 }
@@ -36,14 +41,26 @@ const DEFAULT_FORM: ListingFormValues = {
   images: [],
 };
 
+const DEFAULT_REGISTER_FORM: VendorRegisterInput = {
+  nome: '',
+  loja: '',
+  email: '',
+  telefone: '',
+  provincia: 'Luanda',
+  password: '',
+  confirmPassword: '',
+};
+
 export function PublishModal({
   isOpen,
+  initialAuthTab = 'entrar',
   user,
   isAdmin,
   isAuthorizedSeller,
   editingListing,
   onClose,
   onSellerSignIn,
+  onVendorRegister,
   onOpenAdminLogin,
   onSuccess,
 }: PublishModalProps) {
@@ -52,16 +69,24 @@ export function PublishModal({
   const [compressing, setCompressing] = useState(false);
   const [error, setError] = useState('');
 
-  // Seller Email/Password Login state (created exclusively by Admin)
+  // Seller Auth Tabs: ENTRAR vs CRIAR CONTA GRÁTIS
+  const [authTab, setAuthTab] = useState<VendorAuthTab>(initialAuthTab);
+
+  // Tab 1: ENTRAR
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
+
+  // Tab 2: CRIAR CONTA GRÁTIS
+  const [registerForm, setRegisterForm] = useState<VendorRegisterInput>(DEFAULT_REGISTER_FORM);
+  const [registering, setRegistering] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
     setError('');
+    setAuthTab(initialAuthTab);
     if (editingListing) {
       setForm({
         title: editingListing.title,
@@ -74,7 +99,7 @@ export function PublishModal({
     } else {
       setForm(DEFAULT_FORM);
     }
-  }, [isOpen, editingListing]);
+  }, [isOpen, editingListing, initialAuthTab]);
 
   if (!isOpen) {
     return null;
@@ -96,6 +121,31 @@ export function PublishModal({
       );
     } finally {
       setLoggingIn(false);
+    }
+  }
+
+  async function handleVendorRegisterSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    if (registerForm.password.length < VENDOR_LIMITS.PASSWORD_MIN) {
+      setError(`A senha deve ter no mínimo ${VENDOR_LIMITS.PASSWORD_MIN} caracteres.`);
+      return;
+    }
+    if (registerForm.password !== registerForm.confirmPassword) {
+      setError('As senhas não coincidem. Verifique e tente novamente.');
+      return;
+    }
+
+    setRegistering(true);
+    try {
+      await onVendorRegister(registerForm);
+      setRegisterForm(DEFAULT_REGISTER_FORM);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Não foi possível criar a sua conta.',
+      );
+    } finally {
+      setRegistering(false);
     }
   }
 
@@ -144,7 +194,7 @@ export function PublishModal({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!user || !canPublish) {
-      setError('Inicie sessão com a sua conta de vendedor autorizada.');
+      setError('Inicie sessão ou crie a sua conta de vendedor para publicar.');
       return;
     }
 
@@ -206,66 +256,283 @@ export function PublishModal({
 
         {!canPublish ? (
           <div className="p-6 sm:p-8">
-            <div className="text-center mb-6">
-              <div className="w-12 h-12 rounded-xl bg-[#0A1A33] text-[#FF7A00] flex items-center justify-center mx-auto mb-3">
-                <ShieldCheck className="w-6 h-6" />
-              </div>
-              <h3 className="font-display text-lg font-bold text-slate-900">
-                Acesso Exclusivo para Vendedores
-              </h3>
-              <p className="text-xs text-slate-600 max-w-md mx-auto mt-1 leading-relaxed">
-                Entre com o email e a senha que o Administrador criou para a sua loja. Vendedores não podem criar conta sozinhos.
-              </p>
+            {/* 2 Tabs at the top: ENTRAR | CRIAR CONTA GRÁTIS */}
+            <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-100 rounded-xl max-w-md mx-auto mb-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthTab('entrar');
+                  setError('');
+                }}
+                className={`py-2.5 px-3 rounded-lg text-xs sm:text-sm font-bold transition-colors cursor-pointer ${
+                  authTab === 'entrar'
+                    ? 'bg-[#0A1A33] text-[#FF7A00] shadow-xs'
+                    : 'text-slate-700 hover:text-[#0A1A33]'
+                }`}
+              >
+                ENTRAR
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthTab('registar');
+                  setError('');
+                }}
+                className={`py-2.5 px-3 rounded-lg text-xs sm:text-sm font-bold transition-colors cursor-pointer ${
+                  authTab === 'registar'
+                    ? 'bg-[#0A1A33] text-[#FF7A00] shadow-xs'
+                    : 'text-slate-700 hover:text-[#0A1A33]'
+                }`}
+              >
+                CRIAR CONTA GRÁTIS
+              </button>
             </div>
 
             {error && (
-              <div className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-xs font-medium text-red-700">
+              <div className="mb-5 max-w-md mx-auto rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-xs font-medium text-red-700">
                 {error}
               </div>
             )}
 
-            <form onSubmit={(e) => void handleSellerLoginSubmit(e)} className="space-y-4 max-w-md mx-auto">
-              <div>
-                <label htmlFor="seller-login-email" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Email do Vendedor *
-                </label>
-                <input
-                  id="seller-login-email"
-                  type="email"
-                  required
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="seu@email.com"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FF7A00] focus:border-[#0A1A33]"
-                />
-              </div>
+            {authTab === 'entrar' ? (
+              <div className="max-w-md mx-auto">
+                <form onSubmit={(e) => void handleSellerLoginSubmit(e)} className="space-y-4">
+                  <div>
+                    <label htmlFor="seller-login-email" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Email *
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        id="seller-login-email"
+                        type="email"
+                        required
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        placeholder="seu@email.com"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FF7A00] focus:border-[#0A1A33]"
+                      />
+                    </div>
+                  </div>
 
-              <div>
-                <label htmlFor="seller-login-password" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Senha *
-                </label>
-                <div className="relative">
-                  <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    id="seller-login-password"
-                    type="password"
-                    required
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="Senha fornecida pelo Administrador"
-                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FF7A00] focus:border-[#0A1A33]"
-                  />
+                  <div>
+                    <label htmlFor="seller-login-password" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Senha *
+                    </label>
+                    <div className="relative">
+                      <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        id="seller-login-password"
+                        type="password"
+                        required
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        placeholder="Digite a sua senha"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FF7A00] focus:border-[#0A1A33]"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loggingIn}
+                    className="w-full py-3 rounded-xl bg-[#FF7A00] hover:bg-[#E56800] disabled:opacity-60 text-[#0A1A33] text-sm font-bold transition-colors cursor-pointer"
+                  >
+                    {loggingIn ? 'A entrar...' : 'Entrar para Anunciar'}
+                  </button>
+                </form>
+
+                <div className="mt-4 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthTab('registar');
+                      setError('');
+                    }}
+                    className="text-xs font-semibold text-[#0A1A33] hover:text-[#FF7A00] underline cursor-pointer"
+                  >
+                    Ainda não tem conta? Criar conta grátis
+                  </button>
                 </div>
               </div>
+            ) : (
+              <div className="max-w-md mx-auto">
+                <form onSubmit={(e) => void handleVendorRegisterSubmit(e)} className="space-y-4">
+                  <div>
+                    <label htmlFor="reg-nome" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Nome Completo *
+                    </label>
+                    <div className="relative">
+                      <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        id="reg-nome"
+                        type="text"
+                        required
+                        minLength={VENDOR_LIMITS.NOME_MIN}
+                        maxLength={VENDOR_LIMITS.NOME_MAX}
+                        value={registerForm.nome}
+                        onChange={(e) => setRegisterForm((prev) => ({ ...prev, nome: e.target.value }))}
+                        placeholder="Ex: António Manuel"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FF7A00] focus:border-[#0A1A33]"
+                      />
+                    </div>
+                  </div>
 
-              <button
-                type="submit"
-                disabled={loggingIn}
-                className="w-full py-3 rounded-xl bg-[#FF7A00] hover:bg-[#E56800] disabled:opacity-60 text-[#0A1A33] text-sm font-bold transition-colors cursor-pointer"
-              >
-                {loggingIn ? 'A entrar...' : 'Entrar para Anunciar'}
-              </button>
-            </form>
+                  <div>
+                    <label htmlFor="reg-loja" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Nome da Loja / Nome do Vendedor *
+                    </label>
+                    <div className="relative">
+                      <Store className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        id="reg-loja"
+                        type="text"
+                        required
+                        minLength={VENDOR_LIMITS.LOJA_MIN}
+                        maxLength={VENDOR_LIMITS.LOJA_MAX}
+                        value={registerForm.loja}
+                        onChange={(e) => setRegisterForm((prev) => ({ ...prev, loja: e.target.value }))}
+                        placeholder="Ex: Loja Angola Tech"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FF7A00] focus:border-[#0A1A33]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="reg-email" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Email *
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        id="reg-email"
+                        type="email"
+                        required
+                        minLength={VENDOR_LIMITS.EMAIL_MIN}
+                        maxLength={VENDOR_LIMITS.EMAIL_MAX}
+                        value={registerForm.email}
+                        onChange={(e) => setRegisterForm((prev) => ({ ...prev, email: e.target.value }))}
+                        placeholder="seu@email.com"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FF7A00] focus:border-[#0A1A33]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label htmlFor="reg-telefone" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Telefone / WhatsApp *
+                      </label>
+                      <div className="relative">
+                        <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          id="reg-telefone"
+                          type="text"
+                          inputMode="tel"
+                          required
+                          minLength={VENDOR_LIMITS.TELEFONE_MIN}
+                          maxLength={VENDOR_LIMITS.TELEFONE_MAX}
+                          value={registerForm.telefone}
+                          onChange={(e) => setRegisterForm((prev) => ({ ...prev, telefone: e.target.value }))}
+                          placeholder="ex: 943194189"
+                          className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FF7A00] focus:border-[#0A1A33]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor="reg-provincia" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Província *
+                      </label>
+                      <div className="relative">
+                        <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <select
+                          id="reg-provincia"
+                          required
+                          value={registerForm.provincia}
+                          onChange={(e) =>
+                            setRegisterForm((prev) => ({
+                              ...prev,
+                              provincia: e.target.value as AngolaProvince,
+                            }))
+                          }
+                          className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FF7A00] focus:border-[#0A1A33]"
+                        >
+                          {ANGOLA_PROVINCES.map((prov) => (
+                            <option key={prov} value={prov}>
+                              {prov}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="reg-password" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Senha * (mínimo 6 caracteres)
+                    </label>
+                    <div className="relative">
+                      <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        id="reg-password"
+                        type="password"
+                        required
+                        minLength={VENDOR_LIMITS.PASSWORD_MIN}
+                        maxLength={VENDOR_LIMITS.PASSWORD_MAX}
+                        value={registerForm.password}
+                        onChange={(e) => setRegisterForm((prev) => ({ ...prev, password: e.target.value }))}
+                        placeholder="Mínimo 6 caracteres"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FF7A00] focus:border-[#0A1A33]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="reg-confirm-password" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Confirmar Senha *
+                    </label>
+                    <div className="relative">
+                      <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        id="reg-confirm-password"
+                        type="password"
+                        required
+                        minLength={VENDOR_LIMITS.PASSWORD_MIN}
+                        maxLength={VENDOR_LIMITS.PASSWORD_MAX}
+                        value={registerForm.confirmPassword}
+                        onChange={(e) =>
+                          setRegisterForm((prev) => ({ ...prev, confirmPassword: e.target.value }))
+                        }
+                        placeholder="Repita a senha"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FF7A00] focus:border-[#0A1A33]"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={registering}
+                    className="w-full py-3 rounded-xl bg-[#FF7A00] hover:bg-[#E56800] disabled:opacity-60 text-[#0A1A33] text-sm font-bold transition-colors cursor-pointer"
+                  >
+                    {registering ? 'A criar conta...' : 'Criar Minha Conta e Anunciar'}
+                  </button>
+                </form>
+
+                <div className="mt-4 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthTab('entrar');
+                      setError('');
+                    }}
+                    className="text-xs font-semibold text-[#0A1A33] hover:text-[#FF7A00] underline cursor-pointer"
+                  >
+                    Já tem conta? Entrar agora
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="mt-6 pt-4 border-t border-slate-100 text-center">
               <button

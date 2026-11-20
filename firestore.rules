@@ -31,14 +31,20 @@ service cloud.firestore {
         && request.auth.token.email == 'domingosmeiodiajoao@gmail.com';
     }
 
-    function isActiveSeller() {
+    function isActiveVendor() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/vendors/$(request.auth.uid))
+        && get(/databases/$(database)/documents/vendors/$(request.auth.uid)).data.blocked == false;
+    }
+
+    function isActiveLegacySeller() {
       return isSignedIn()
         && exists(/databases/$(database)/documents/sellers/$(request.auth.uid))
         && get(/databases/$(database)/documents/sellers/$(request.auth.uid)).data.blocked == false;
     }
 
     function isSellerOrAdmin() {
-      return isAdmin() || isActiveSeller();
+      return isAdmin() || isActiveVendor() || isActiveLegacySeller();
     }
 
     function isValidProvince(province) {
@@ -144,6 +150,20 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
+    function isValidVendor(data) {
+      return data.keys().hasAll(['nome', 'loja', 'email', 'telefone', 'provincia', 'role', 'blocked', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['nome', 'loja', 'email', 'telefone', 'provincia', 'role', 'blocked', 'createdAt', 'updatedAt'])
+        && data.nome is string && data.nome.size() >= 2 && data.nome.size() <= 80
+        && data.loja is string && data.loja.size() >= 2 && data.loja.size() <= 80
+        && data.email is string && data.email.size() >= 5 && data.email.size() <= 120
+        && data.telefone is string && data.telefone.size() >= 6 && data.telefone.size() <= 25
+        && isValidProvince(data.provincia)
+        && data.role is string && data.role.size() <= 10 && data.role == 'vendor'
+        && data.blocked is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
     match /listings/{listingId} {
       // Single-document read
       allow get: if isValidId(listingId) && (
@@ -157,7 +177,7 @@ service cloud.firestore {
         isAdmin() ||
         (isSignedIn() && existing().authorId == request.auth.uid);
 
-      // Create: active Admin-created sellers (always pending) or Admin
+      // Create: active vendors/sellers (always pending) or Admin
       allow create: if isSellerOrAdmin()
         && isValidId(listingId)
         && isValidListing(incoming())
@@ -203,8 +223,10 @@ service cloud.firestore {
         );
 
       // Delete: Admin or active owner
-      allow delete: if isValidId(listingId)
-        && (isAdmin() || (isActiveSeller() && existing().authorId == request.auth.uid));
+      allow delete: if isValidId(listingId) && (
+        isAdmin() ||
+        ((isActiveVendor() || isActiveLegacySeller()) && existing().authorId == request.auth.uid)
+      );
     }
 
     match /sellers/{sellerId} {
@@ -217,7 +239,7 @@ service cloud.firestore {
       // Only Admin can list all sellers
       allow list: if isAdmin();
 
-      // Only Admin can create, block/unblock, or delete seller accounts
+      // Only Admin can create, block/unblock, or delete legacy seller accounts
       allow create: if isAdmin()
         && isValidId(sellerId)
         && isValidSeller(incoming())
@@ -236,6 +258,49 @@ service cloud.firestore {
         && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'blocked', 'updatedAt']);
 
       allow delete: if isAdmin() && isValidId(sellerId);
+    }
+
+    match /vendors/{vendorId} {
+      // Strict PII isolation: only the vendor themselves or Admin can read
+      allow get: if isValidId(vendorId) && (
+        isAdmin() ||
+        (isSignedIn() && request.auth.uid == vendorId)
+      );
+
+      // Only Admin can list all vendors
+      allow list: if isAdmin();
+
+      // Self-registration: signed-in user creates their own vendor document with role='vendor' and blocked=false
+      allow create: if isSignedIn()
+        && isValidId(vendorId)
+        && request.auth.uid == vendorId
+        && isValidVendor(incoming())
+        && incoming().role == 'vendor'
+        && incoming().blocked == false
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      // Update: Admin can block/unblock or edit; active vendor owner can update own profile fields
+      allow update: if isSignedIn()
+        && isValidId(vendorId)
+        && isValidVendor(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().email == existing().email
+        && incoming().role == existing().role
+        && incoming().updatedAt == request.time
+        && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'nome', 'loja', 'blocked', 'updatedAt'
+          ])) ||
+          (request.auth.uid == vendorId
+            && existing().blocked == false
+            && incoming().blocked == existing().blocked
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'nome', 'loja', 'telefone', 'provincia', 'updatedAt'
+            ]))
+        );
+
+      allow delete: if isAdmin() && isValidId(vendorId);
     }
   }
 }

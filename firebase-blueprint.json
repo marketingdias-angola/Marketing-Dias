@@ -153,6 +153,86 @@
         }
       },
       "required": ["name", "email", "blocked", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Vendor": {
+      "title": "Vendor",
+      "description": "Conta de vendedor auto-registada no Marketing Dias com Email/Senha.",
+      "type": "object",
+      "properties": {
+        "nome": {
+          "type": "string",
+          "description": "Nome completo do vendedor.",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "loja": {
+          "type": "string",
+          "description": "Nome da loja ou nome comercial do vendedor.",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "email": {
+          "type": "string",
+          "description": "Email de acesso do vendedor.",
+          "minLength": 5,
+          "maxLength": 120
+        },
+        "telefone": {
+          "type": "string",
+          "description": "Telefone ou WhatsApp de registo do vendedor (privado).",
+          "minLength": 6,
+          "maxLength": 25
+        },
+        "provincia": {
+          "type": "string",
+          "description": "Uma das 21 províncias de Angola.",
+          "enum": [
+            "Luanda",
+            "Bengo",
+            "Benguela",
+            "Bié",
+            "Cabinda",
+            "Cuando",
+            "Cubango",
+            "Cuanza Norte",
+            "Cuanza Sul",
+            "Cunene",
+            "Huambo",
+            "Huíla",
+            "Icolo e Bengo",
+            "Lunda Norte",
+            "Lunda Sul",
+            "Malanje",
+            "Moxico",
+            "Moxico Leste",
+            "Namibe",
+            "Uíge",
+            "Zaire"
+          ],
+          "maxLength": 30
+        },
+        "role": {
+          "type": "string",
+          "description": "Papel do utilizador.",
+          "enum": ["vendor"],
+          "maxLength": 10
+        },
+        "blocked": {
+          "type": "boolean",
+          "description": "Indica se o vendedor foi bloqueado pelo Administrador."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Data de criação da conta no servidor."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp do servidor na atualização."
+        }
+      },
+      "required": ["nome", "loja", "email", "telefone", "provincia", "role", "blocked", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -166,7 +246,13 @@
       "schema": {
         "$ref": "#/entities/Seller"
       },
-      "description": "Contas de vendedores criadas e controladas exclusivamente pelo Administrador."
+      "description": "Contas de vendedores criadas pelo Administrador."
+    },
+    "/vendors/{vendorId}": {
+      "schema": {
+        "$ref": "#/entities/Vendor"
+      },
+      "description": "Contas de vendedores criadas por auto-registo."
     }
   }
 }
