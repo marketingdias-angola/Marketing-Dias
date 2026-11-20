@@ -1,0 +1,172 @@
+{
+  "entities": {
+    "Listing": {
+      "title": "Listing",
+      "description": "Anúncio real de negócio ou produto no Marketing Dias. Suporta até 10 fotos, 15 categorias e 21 províncias de Angola. Proibido qualquer campo de telefone ou contacto do vendedor.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Título do negócio ou produto.",
+          "minLength": 3,
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "description": "Descrição detalhada do negócio ou produto.",
+          "minLength": 10,
+          "maxLength": 2000
+        },
+        "price": {
+          "type": "number",
+          "description": "Preço em Kwanzas (AOA)."
+        },
+        "category": {
+          "type": "string",
+          "description": "Uma das 15 categorias do Marketing Dias.",
+          "enum": [
+            "Moda e acessórios",
+            "Alimentos e Mercearia",
+            "Serviços técnicos",
+            "Negócios e empresas",
+            "Roupas e calçados",
+            "Móveis e decoração",
+            "Materiais de Construção",
+            "Carros e viaturas",
+            "Imóveis e terrenos",
+            "Agricultura e campos",
+            "Telemóveis e acessórios",
+            "Computador e informática",
+            "Televisor e eletrónicas",
+            "Empregos",
+            "Outros"
+          ],
+          "maxLength": 40
+        },
+        "province": {
+          "type": "string",
+          "description": "Uma das 21 províncias de Angola.",
+          "enum": [
+            "Luanda",
+            "Bengo",
+            "Benguela",
+            "Bié",
+            "Cabinda",
+            "Cuando",
+            "Cubango",
+            "Cuanza Norte",
+            "Cuanza Sul",
+            "Cunene",
+            "Huambo",
+            "Huíla",
+            "Icolo e Bengo",
+            "Lunda Norte",
+            "Lunda Sul",
+            "Malanje",
+            "Moxico",
+            "Moxico Leste",
+            "Namibe",
+            "Uíge",
+            "Zaire"
+          ],
+          "maxLength": 30
+        },
+        "images": {
+          "type": "array",
+          "description": "Lista de até 10 fotos comprimidas em Data URL.",
+          "maxItems": 10
+        },
+        "authorId": {
+          "type": "string",
+          "description": "UID do usuário autenticado que criou o anúncio.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "status": {
+          "type": "string",
+          "description": "Estado de moderação gerido exclusivamente pelo Administrador.",
+          "enum": ["pending", "approved", "paused", "sold"],
+          "maxLength": 20
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp do servidor na criação."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp do servidor na atualização."
+        }
+      },
+      "required": [
+        "title",
+        "description",
+        "price",
+        "category",
+        "province",
+        "images",
+        "authorId",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Seller": {
+      "title": "Seller",
+      "description": "Conta de vendedor criada exclusivamente pelo Administrador do Marketing Dias.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Nome do vendedor.",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "email": {
+          "type": "string",
+          "description": "Email de acesso do vendedor.",
+          "minLength": 5,
+          "maxLength": 120
+        },
+        "blocked": {
+          "type": "boolean",
+          "description": "Indica se o vendedor está bloqueado pelo Administrador."
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "UID do Administrador que criou a conta.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp do servidor na criação."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp do servidor na atualização."
+        }
+      },
+      "required": ["name", "email", "blocked", "createdBy", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/listings/{listingId}": {
+      "schema": {
+        "$ref": "#/entities/Listing"
+      },
+      "description": "Coleção principal de anúncios reais do Marketing Dias."
+    },
+    "/sellers/{sellerId}": {
+      "schema": {
+        "$ref": "#/entities/Seller"
+      },
+      "description": "Contas de vendedores criadas e controladas exclusivamente pelo Administrador."
+    }
+  }
+}

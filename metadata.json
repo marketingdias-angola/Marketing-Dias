@@ -1,0 +1,6 @@
+{
+  "name": "Marketing Dias",
+  "description": "Marketplace angolano para compra e venda nas 21 províncias de Angola com atendimento direto pelo WhatsApp do Administrador.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="#0A1A33" />
+  <circle cx="256" cy="256" r="194" fill="#0A1A33" stroke="#4A668C" stroke-width="10" />
+  <!-- Left M fold in crisp white -->
+  <path d="M132 154 L132 252 L256 376 L278 354 L168 244 L168 214 L232 278 L256 254 L132 154 Z" fill="#FFFFFF" />
+  <!-- Right D/M fold in vibrant orange #FF7A00 -->
+  <path d="M232 232 L308 156 L362 210 C392 240 392 288 362 318 L256 424 L234 402 L338 298 C354 282 354 252 338 236 L308 206 L256 258 L232 232 Z" fill="#FF7A00" />
+  <!-- Inner vertical pillar in #FF7A00 -->
+  <rect x="278" y="216" width="28" height="106" rx="6" fill="#FF7A00" />
+</svg>

@@ -1,0 +1,241 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Deny all access by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Hardened Primitives ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == 'domingosmeiodiajoao@gmail.com';
+    }
+
+    function isActiveSeller() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/sellers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/sellers/$(request.auth.uid)).data.blocked == false;
+    }
+
+    function isSellerOrAdmin() {
+      return isAdmin() || isActiveSeller();
+    }
+
+    function isValidProvince(province) {
+      return province is string && province.size() <= 30 && province in [
+        'Luanda',
+        'Bengo',
+        'Benguela',
+        'Bié',
+        'Cabinda',
+        'Cuando',
+        'Cubango',
+        'Cuanza Norte',
+        'Cuanza Sul',
+        'Cunene',
+        'Huambo',
+        'Huíla',
+        'Icolo e Bengo',
+        'Lunda Norte',
+        'Lunda Sul',
+        'Malanje',
+        'Moxico',
+        'Moxico Leste',
+        'Namibe',
+        'Uíge',
+        'Zaire'
+      ];
+    }
+
+    function isValidCategory(category) {
+      return category is string && category.size() <= 40 && category in [
+        'Moda e acessórios',
+        'Alimentos e Mercearia',
+        'Serviços técnicos',
+        'Negócios e empresas',
+        'Roupas e calçados',
+        'Móveis e decoração',
+        'Materiais de Construção',
+        'Carros e viaturas',
+        'Imóveis e terrenos',
+        'Agricultura e campos',
+        'Telemóveis e acessórios',
+        'Computador e informática',
+        'Televisor e eletrónicas',
+        'Empregos',
+        'Outros'
+      ];
+    }
+
+    function isValidImagesList(images) {
+      return images is list
+        && images.size() <= 10
+        && (
+          images.size() == 0 ||
+          (images[0] is string && images[0].size() <= 120000 && images[0].matches('^data:image/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$'))
+        );
+    }
+
+    function isValidListing(data) {
+      return data.keys().hasAll([
+          'title',
+          'description',
+          'price',
+          'category',
+          'province',
+          'images',
+          'authorId',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title',
+          'description',
+          'price',
+          'category',
+          'province',
+          'images',
+          'authorId',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.title is string && data.title.size() >= 3 && data.title.size() <= 100
+        && data.description is string && data.description.size() >= 10 && data.description.size() <= 2000
+        && (data.price is int || data.price is float) && data.price >= 1 && data.price <= 1000000000
+        && isValidCategory(data.category)
+        && isValidProvince(data.province)
+        && isValidImagesList(data.images)
+        && isValidId(data.authorId)
+        && data.status is string && data.status.size() <= 20 && data.status in ['pending', 'approved', 'paused', 'sold']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSeller(data) {
+      return data.keys().hasAll(['name', 'email', 'blocked', 'createdBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'email', 'blocked', 'createdBy', 'createdAt', 'updatedAt'])
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 60
+        && data.email is string && data.email.size() >= 5 && data.email.size() <= 120
+        && data.blocked is bool
+        && isValidId(data.createdBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /listings/{listingId} {
+      // Single-document read
+      allow get: if isValidId(listingId) && (
+        existing().status == 'approved' ||
+        isAdmin() ||
+        (isSignedIn() && existing().authorId == request.auth.uid)
+      );
+
+      // Secure list query enforcer (no get/exists calls)
+      allow list: if existing().status == 'approved' ||
+        isAdmin() ||
+        (isSignedIn() && existing().authorId == request.auth.uid);
+
+      // Create: active Admin-created sellers (always pending) or Admin
+      allow create: if isSellerOrAdmin()
+        && isValidId(listingId)
+        && isValidListing(incoming())
+        && incoming().authorId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (isAdmin() && incoming().status in ['pending', 'approved']) ||
+          incoming().status == 'pending'
+        );
+
+      // Update: validation wrapper + action-based branches + immutable fields + terminal lock
+      allow update: if isSellerOrAdmin()
+        && isValidId(listingId)
+        && isValidListing(incoming())
+        && incoming().authorId == existing().authorId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Admin full moderation override
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'description', 'price', 'category', 'province',
+            'images', 'status', 'updatedAt'
+          ])) ||
+          // Seller edits listing content (resets status to pending for admin review; locked if sold)
+          (existing().authorId == request.auth.uid
+            && existing().status != 'sold'
+            && incoming().status == 'pending'
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'description', 'price', 'category', 'province',
+              'images', 'status', 'updatedAt'
+            ])) ||
+          // Seller marks approved listing as paused or sold
+          (existing().authorId == request.auth.uid
+            && existing().status == 'approved'
+            && incoming().status in ['paused', 'sold']
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+          // Seller submits paused listing back for review
+          (existing().authorId == request.auth.uid
+            && existing().status == 'paused'
+            && incoming().status == 'pending'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+
+      // Delete: Admin or active owner
+      allow delete: if isValidId(listingId)
+        && (isAdmin() || (isActiveSeller() && existing().authorId == request.auth.uid));
+    }
+
+    match /sellers/{sellerId} {
+      // Only Admin or the seller themselves can read their own seller record
+      allow get: if isValidId(sellerId) && (
+        isAdmin() ||
+        (isSignedIn() && request.auth.uid == sellerId)
+      );
+
+      // Only Admin can list all sellers
+      allow list: if isAdmin();
+
+      // Only Admin can create, block/unblock, or delete seller accounts
+      allow create: if isAdmin()
+        && isValidId(sellerId)
+        && isValidSeller(incoming())
+        && incoming().createdBy == request.auth.uid
+        && incoming().blocked == false
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isAdmin()
+        && isValidId(sellerId)
+        && isValidSeller(incoming())
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().email == existing().email
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'blocked', 'updatedAt']);
+
+      allow delete: if isAdmin() && isValidId(sellerId);
+    }
+  }
+}
